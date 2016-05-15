@@ -2,6 +2,10 @@
     <string name="app_name">AutoDoor</string>
     <string name="action_settings">Settings</string>
     <string name="edit_message">Enter a message</string>
-    <string name="button_send">Send</string>
+    <string name="enter_passcode_message">Enter Passcode:</string>
+    <string name="button_unlock">Unlock</string>
+    <string name="unlocked_message">Unlocked!</string>
+    <string name="locked_message">Locked</string>
+    <string name="wrong_passcode">Wrong Passcode</string>
     <string name="title_activity_display_message">MyMessage</string>
 </resources>
