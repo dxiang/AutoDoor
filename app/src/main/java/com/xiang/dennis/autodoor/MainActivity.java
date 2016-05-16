@@ -30,12 +30,12 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View view) {
                 EditText input_passcode = (EditText) findViewById(R.id.txt_passcode);
                 int passcode = Integer.parseInt(input_passcode.getText().toString());
+                TextView status_text = (TextView) findViewById(R.id.txtview_lock_status);
                 if(passcode == 1234) {
-                    TextView status_text = (TextView) findViewById(R.id.txt_lock_status);
-
+                    status_text.setText(R.string.unlocked_message);
                 }
                 else {
-
+                    status_text.setText(R.string.wrong_passcode);
                 }
 
             }
