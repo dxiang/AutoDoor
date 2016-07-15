@@ -1,13 +1,16 @@
 package com.xiang.dennis.autodoor;
 
+import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -31,9 +34,10 @@ import java.util.TimerTask;
 public class MainActivity extends AppCompatActivity {
 
     public final static String EXTRA_MESSAGE = "com.xiang.dennis.autodoor.MESSAGE";
+    private final static String TAG = MainActivity.class.getSimpleName();
+
 
     private Button unlock_button = null;
-    private EditText input_passcode = null;
 
     private BluetoothGattCharacteristic characteristicTx = null;
     private RBLService mBluetoothLeService;
@@ -45,9 +49,79 @@ public class MainActivity extends AppCompatActivity {
     private boolean connState = false;
     private boolean scanFlag = false;   // flag for if device is found, false = not found
 
+    private byte[] data = new byte[3];
     private static final long SCAN_PERIOD = 2000;
+    private static final int REQUEST_ENABLE_BT = 1;
     final private static char[] hexArray = { '0', '1', '2', '3', '4', '5', '6',
             '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
+
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.menu_main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        int id = item.getItemId();
+
+        //noinspection SimplifiableIfStatement
+        if (id == R.id.action_settings) {
+            return true;
+        }
+
+        return super.onOptionsItemSelected(item);
+    }
+
+
+    private final ServiceConnection mServiceConnection = new ServiceConnection() {
+
+        @Override
+        public void onServiceConnected(ComponentName componentName,
+                                       IBinder service) {
+            mBluetoothLeService = ((RBLService.LocalBinder) service)
+                    .getService();
+            if (!mBluetoothLeService.initialize()) {
+                Log.e(TAG, "Unable to initialize Bluetooth");
+                finish();
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName componentName) {
+            mBluetoothLeService = null;
+        }
+    };
+
+    private final BroadcastReceiver mGattUpdateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            final String action = intent.getAction();
+
+            if (RBLService.ACTION_GATT_DISCONNECTED.equals(action)) {
+                Toast.makeText(getApplicationContext(), "Disconnected",
+                        Toast.LENGTH_SHORT).show();
+                setButtonDisable();
+            } else if (RBLService.ACTION_GATT_SERVICES_DISCOVERED
+                    .equals(action)) {
+                Toast.makeText(getApplicationContext(), "Connected",
+                        Toast.LENGTH_SHORT).show();
+
+                getGattService(mBluetoothLeService.getSupportedGattService());
+            } else if (RBLService.ACTION_DATA_AVAILABLE.equals(action)) {
+                data = intent.getByteArrayExtra(RBLService.EXTRA_DATA);
+
+                //readAnalogInValue(data);
+            } else if (RBLService.ACTION_GATT_RSSI.equals(action)) {
+                //displayData(intent.getStringExtra(RBLService.EXTRA_DATA));
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,7 +129,6 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
-
 
         unlock_button = (Button) findViewById(R.id.btn_unlock);
         unlock_button.setOnClickListener(new View.OnClickListener() {
@@ -102,96 +175,41 @@ public class MainActivity extends AppCompatActivity {
                     mBluetoothLeService.close();
                     setButtonDisable();
                 }
-
-                if (!getPackageManager().hasSystemFeature( PackageManager.FEATURE_BLUETOOTH_LE)) {
-                    Toast.makeText(this, "Ble not supported", Toast.LENGTH_SHORT).show();
-                    finish();
-                }
-
-                final BluetoothManager mBluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-                mBluetoothAdapter = mBluetoothManager.getAdapter();
-                if (mBluetoothAdapter == null) {
-                    Toast.makeText(this, "BLE not supported", Toast.LENGTH_SHORT)
-                            .show();
-                    finish();
-                    return;
-                }
-
-                Intent gattServiceIntent = new Intent(MainActivity.this,
-                        RBLService.class);
-                bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
             }
         });
 
-    }
-
-    private final ServiceConnection mServiceConnection = new ServiceConnection() {
-
-        @Override
-        public void onServiceConnected(ComponentName componentName,
-                                       IBinder service) {
-            mBluetoothLeService = ((RBLService.LocalBinder) service)
-                    .getService();
-            if (!mBluetoothLeService.initialize()) {
-                Log.e(TAG, "Unable to initialize Bluetooth");
-                finish();
-            }
+        if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+            Toast.makeText(MainActivity.this, "BLE not supported", Toast.LENGTH_SHORT).show();
+            finish();
         }
 
-        @Override
-        public void onServiceDisconnected(ComponentName componentName) {
-            mBluetoothLeService = null;
+        final BluetoothManager mBluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        mBluetoothAdapter = mBluetoothManager.getAdapter();
+        if (mBluetoothAdapter == null) {
+            Toast.makeText(MainActivity.this, "BLE not supported", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
         }
-    };
 
-    private final BroadcastReceiver mGattUpdateReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            final String action = intent.getAction();
+        Intent gattServiceIntent = new Intent(MainActivity.this, RBLService.class);
+        bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
 
-            if (RBLService.ACTION_GATT_DISCONNECTED.equals(action)) {
-                Toast.makeText(getApplicationContext(), "Disconnected",
-                        Toast.LENGTH_SHORT).show();
-                setButtonDisable();
-            } else if (RBLService.ACTION_GATT_SERVICES_DISCOVERED
-                    .equals(action)) {
-                Toast.makeText(getApplicationContext(), "Connected",
-                        Toast.LENGTH_SHORT).show();
-
-                getGattService(mBluetoothLeService.getSupportedGattService());
-            } else if (RBLService.ACTION_DATA_AVAILABLE.equals(action)) {
-                data = intent.getByteArrayExtra(RBLService.EXTRA_DATA);
-
-                readAnalogInValue(data);
-            } else if (RBLService.ACTION_GATT_RSSI.equals(action)) {
-                displayData(intent.getStringExtra(RBLService.EXTRA_DATA));
-            }
-        }
-    };
-
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
     }
 
     @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
+    protected void onResume() {
+        super.onResume();
 
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
+        Log.i(TAG, "Resuming Activity");
+
+        if (!mBluetoothAdapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(
+                    BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
         }
 
-        return super.onOptionsItemSelected(item);
+        registerReceiver(mGattUpdateReceiver, makeGattUpdateIntentFilter());
     }
-
 
     private void scanLeDevice() {
         new Thread() {
@@ -236,6 +254,55 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
+
+    private void getGattService(BluetoothGattService gattService) {
+        if (gattService == null)
+            return;
+
+        setButtonEnable();
+        startReadRssi();
+
+        characteristicTx = gattService
+                .getCharacteristic(RBLService.UUID_BLE_SHIELD_TX);
+
+        BluetoothGattCharacteristic characteristicRx = gattService
+                .getCharacteristic(RBLService.UUID_BLE_SHIELD_RX);
+        mBluetoothLeService.setCharacteristicNotification(characteristicRx,
+                true);
+        mBluetoothLeService.readCharacteristic(characteristicRx);
+    }
+
+
+    private static IntentFilter makeGattUpdateIntentFilter() {
+        final IntentFilter intentFilter = new IntentFilter();
+
+        intentFilter.addAction(RBLService.ACTION_GATT_CONNECTED);
+        intentFilter.addAction(RBLService.ACTION_GATT_DISCONNECTED);
+        intentFilter.addAction(RBLService.ACTION_GATT_SERVICES_DISCOVERED);
+        intentFilter.addAction(RBLService.ACTION_DATA_AVAILABLE);
+        intentFilter.addAction(RBLService.ACTION_GATT_RSSI);
+
+        return intentFilter;
+    }
+
+
+    private void startReadRssi() {
+        new Thread() {
+            public void run() {
+
+                while (flag) {
+                    mBluetoothLeService.readRssi();
+                    try {
+                        sleep(500);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            };
+        }.start();
+    }
+
+
     private String bytesToHex(byte[] bytes) {
         char[] hexChars = new char[bytes.length * 2];
         int v;
@@ -246,6 +313,7 @@ public class MainActivity extends AppCompatActivity {
         }
         return new String(hexChars);
     }
+
 
     private String stringToUuidString(String uuid) {
         StringBuffer newString = new StringBuffer();
@@ -262,6 +330,25 @@ public class MainActivity extends AppCompatActivity {
         return newString.toString();
     }
 
+/*
+    private void readAnalogInValue(byte[] data) {
+        for (int i = 0; i < data.length; i += 3) {
+            if (data[i] == 0x0A) {
+                if (data[i + 1] == 0x01)
+                    digitalInBtn.setChecked(false);
+                else
+                    digitalInBtn.setChecked(true);
+            } else if (data[i] == 0x0B) {
+                int Value;
+
+                Value = ((data[i + 1] << 8) & 0x0000ff00)
+                        | (data[i + 2] & 0x000000ff);
+
+                AnalogInValue.setText(Value + "");
+            }
+        }
+    }
+*/
     // Enables the unlock button
     private void setButtonEnable() {
         flag = true;
@@ -269,11 +356,41 @@ public class MainActivity extends AppCompatActivity {
         unlock_button.setEnabled(flag);
     }
 
+
     // Disables the unlock button
     private void setButtonDisable() {
         flag = false;
         connState = false;
         unlock_button.setEnabled(flag);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+
+        flag = false;
+
+        unregisterReceiver(mGattUpdateReceiver);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+
+        if (mServiceConnection != null)
+            unbindService(mServiceConnection);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        // User chose not to enable Bluetooth.
+        if (requestCode == REQUEST_ENABLE_BT
+                && resultCode == Activity.RESULT_CANCELED) {
+            finish();
+            return;
+        }
+
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
 }
