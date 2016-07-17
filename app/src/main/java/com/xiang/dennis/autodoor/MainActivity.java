@@ -38,6 +38,7 @@ public class MainActivity extends AppCompatActivity {
 
 
     private Button unlock_button = null;
+    private EditText passcode = null;
 
     private BluetoothGattCharacteristic characteristicTx = null;
     private RBLService mBluetoothLeService;
@@ -116,7 +117,6 @@ public class MainActivity extends AppCompatActivity {
             } else if (RBLService.ACTION_DATA_AVAILABLE.equals(action)) {
                 data = intent.getByteArrayExtra(RBLService.EXTRA_DATA);
 
-                //readAnalogInValue(data);
             } else if (RBLService.ACTION_GATT_RSSI.equals(action)) {
                 //displayData(intent.getStringExtra(RBLService.EXTRA_DATA));
             }
@@ -129,6 +129,8 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
+
+        passcode = (EditText) findViewById(R.id.txt_passcode);
 
         unlock_button = (Button) findViewById(R.id.btn_unlock);
         unlock_button.setOnClickListener(new View.OnClickListener() {
@@ -148,6 +150,14 @@ public class MainActivity extends AppCompatActivity {
                                 mDeviceAddress = mDevice.getAddress();
                                 mBluetoothLeService.connect(mDeviceAddress);
                                 scanFlag = true;
+
+                                String str = passcode.getText().toString();
+                                byte[] tmp = str.getBytes();
+
+                                characteristicTx.setValue(tmp);
+                                mBluetoothLeService.writeCharacteristic(characteristicTx);
+
+                                passcode.setText("");
                             }
                             else {
                                 runOnUiThread(new Runnable() {
@@ -155,7 +165,7 @@ public class MainActivity extends AppCompatActivity {
                                         Toast toast = Toast
                                                 .makeText(
                                                         MainActivity.this,
-                                                        "Couldn't find BLE shield!",
+                                                        "Couldn't connect to device!",
                                                         Toast.LENGTH_SHORT);
                                         toast.setGravity(0, 0, Gravity.CENTER);
                                         toast.show();
@@ -218,6 +228,8 @@ public class MainActivity extends AppCompatActivity {
             public void run() {
                 mBluetoothAdapter.startLeScan(mLeScanCallback);
 
+                Log.i(TAG, "ADAPTER IS SCANNING...");
+
                 try {
                     Thread.sleep(SCAN_PERIOD);
                 } catch (InterruptedException e) {
@@ -243,6 +255,9 @@ public class MainActivity extends AppCompatActivity {
                     for (int i = 32, j = 0; i >= 17; i--, j++) {
                         serviceUuidBytes[j] = scanRecord[i];
                     }
+
+                    Log.i(TAG, "CALLING BACK FOR BLE SCAN");
+
                     serviceUuid = bytesToHex(serviceUuidBytes);
                     if (stringToUuidString(serviceUuid).equals(
                             RBLGattAttributes.BLE_SHIELD_SERVICE
@@ -330,25 +345,7 @@ public class MainActivity extends AppCompatActivity {
         return newString.toString();
     }
 
-/*
-    private void readAnalogInValue(byte[] data) {
-        for (int i = 0; i < data.length; i += 3) {
-            if (data[i] == 0x0A) {
-                if (data[i + 1] == 0x01)
-                    digitalInBtn.setChecked(false);
-                else
-                    digitalInBtn.setChecked(true);
-            } else if (data[i] == 0x0B) {
-                int Value;
 
-                Value = ((data[i + 1] << 8) & 0x0000ff00)
-                        | (data[i + 2] & 0x000000ff);
-
-                AnalogInValue.setText(Value + "");
-            }
-        }
-    }
-*/
     // Enables the unlock button
     private void setButtonEnable() {
         flag = true;
