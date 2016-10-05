@@ -6,13 +6,14 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
-import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.support.v7.app.AppCompatActivity;
@@ -24,7 +25,6 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.Locale;
@@ -40,9 +40,12 @@ public class MainActivity extends AppCompatActivity {
     private Button unlock_button = null;
     private EditText passcode = null;
 
+    // Bluetooth objects
+    private BluetoothAdapter BLE_Adapter;
+    private BluetoothLeScanner BLE_Scanner;
     private BluetoothGattCharacteristic characteristicTx = null;
     private RBLService mBluetoothLeService;
-    private BluetoothAdapter mBluetoothAdapter;
+
     private BluetoothDevice mDevice = null;
     private String mDeviceAddress;
 
@@ -80,55 +83,24 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-    private final ServiceConnection mServiceConnection = new ServiceConnection() {
-
-        @Override
-        public void onServiceConnected(ComponentName componentName,
-                                       IBinder service) {
-            mBluetoothLeService = ((RBLService.LocalBinder) service)
-                    .getService();
-            if (!mBluetoothLeService.initialize()) {
-                Log.e(TAG, "Unable to initialize Bluetooth");
-                finish();
-            }
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName componentName) {
-            mBluetoothLeService = null;
-        }
-    };
-
-    private final BroadcastReceiver mGattUpdateReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            final String action = intent.getAction();
-
-            if (RBLService.ACTION_GATT_DISCONNECTED.equals(action)) {
-                Toast.makeText(getApplicationContext(), "Disconnected",
-                        Toast.LENGTH_SHORT).show();
-                setButtonDisable();
-            } else if (RBLService.ACTION_GATT_SERVICES_DISCOVERED
-                    .equals(action)) {
-                Toast.makeText(getApplicationContext(), "Connected",
-                        Toast.LENGTH_SHORT).show();
-
-                getGattService(mBluetoothLeService.getSupportedGattService());
-            } else if (RBLService.ACTION_DATA_AVAILABLE.equals(action)) {
-                data = intent.getByteArrayExtra(RBLService.EXTRA_DATA);
-
-            } else if (RBLService.ACTION_GATT_RSSI.equals(action)) {
-                //displayData(intent.getStringExtra(RBLService.EXTRA_DATA));
-            }
-        }
-    };
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
+
+        // Initialize bluetooth adapter
+        final BluetoothManager mBluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        BLE_Adapter = mBluetoothManager.getAdapter();
+        BLE_Scanner = BLE_Adapter.getBluetoothLeScanner();
+
+        // Ensures Bluetooth is available on the device and it is enabled. If not,
+        // displays a dialog requesting user permission to enable Bluetooth.
+        if (BLE_Adapter == null || !BLE_Adapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+        }
 
         passcode = (EditText) findViewById(R.id.txt_passcode);
 
@@ -188,23 +160,101 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        if (!getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
-            Toast.makeText(MainActivity.this, "BLE not supported", Toast.LENGTH_SHORT).show();
-            finish();
-        }
-
-        final BluetoothManager mBluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-        mBluetoothAdapter = mBluetoothManager.getAdapter();
-        if (mBluetoothAdapter == null) {
-            Toast.makeText(MainActivity.this, "BLE not supported", Toast.LENGTH_SHORT).show();
-            finish();
-            return;
-        }
 
         Intent gattServiceIntent = new Intent(MainActivity.this, RBLService.class);
         bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
 
     }
+
+
+    private void scanLeDevice() {
+        new Thread() {
+
+            @Override
+            public void run() {
+                BLE_Scanner.startScan(BLE_ScanCallback);
+
+                Log.i(TAG, "ADAPTER IS SCANNING...");
+
+                try {
+                    Thread.sleep(SCAN_PERIOD);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                BLE_Scanner.stopScan(BLE_ScanCallback);
+            }
+        }.start();
+    }
+
+    private ScanCallback BLE_ScanCallback = new ScanCallback() {
+
+        @Override
+        public void onScanResult(int callBackType, final android.bluetooth.le.ScanResult scan_result) {
+
+            super.onScanResult(callBackType, scan_result);
+
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    byte[] serviceUuidBytes = new byte[16];
+                    String serviceUuid = "";
+                    //TODO: get the UUID
+
+                    Log.i(TAG, "CALLING BACK FOR BLE SCAN");
+
+                    serviceUuid = bytesToHex(serviceUuidBytes);
+                    if (stringToUuidString(serviceUuid).equals(
+                            RBLGattAttributes.BLE_SHIELD_SERVICE.toUpperCase(Locale.ENGLISH))) {
+                        mDevice = scan_result.getDevice();
+                    }
+                }
+            });
+        }
+    };
+
+    private final ServiceConnection mServiceConnection = new ServiceConnection() {
+
+        @Override
+        public void onServiceConnected(ComponentName componentName,
+                                       IBinder service) {
+            mBluetoothLeService = ((RBLService.LocalBinder) service)
+                    .getService();
+            if (!mBluetoothLeService.initialize()) {
+                Log.e(TAG, "Unable to initialize Bluetooth");
+                finish();
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName componentName) {
+            mBluetoothLeService = null;
+        }
+    };
+
+    private final BroadcastReceiver mGattUpdateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            final String action = intent.getAction();
+
+            if (RBLService.ACTION_GATT_DISCONNECTED.equals(action)) {
+                Toast.makeText(getApplicationContext(), "Disconnected",
+                        Toast.LENGTH_SHORT).show();
+                setButtonDisable();
+            } else if (RBLService.ACTION_GATT_SERVICES_DISCOVERED
+                    .equals(action)) {
+                Toast.makeText(getApplicationContext(), "Connected",
+                        Toast.LENGTH_SHORT).show();
+
+                getGattService(mBluetoothLeService.getSupportedGattService());
+            } else if (RBLService.ACTION_DATA_AVAILABLE.equals(action)) {
+                data = intent.getByteArrayExtra(RBLService.EXTRA_DATA);
+
+            } else if (RBLService.ACTION_GATT_RSSI.equals(action)) {
+                //displayData(intent.getStringExtra(RBLService.EXTRA_DATA));
+            }
+        }
+    };
 
     @Override
     protected void onResume() {
@@ -221,53 +271,7 @@ public class MainActivity extends AppCompatActivity {
         registerReceiver(mGattUpdateReceiver, makeGattUpdateIntentFilter());
     }
 
-    private void scanLeDevice() {
-        new Thread() {
 
-            @Override
-            public void run() {
-                mBluetoothAdapter.startLeScan(mLeScanCallback);
-
-                Log.i(TAG, "ADAPTER IS SCANNING...");
-
-                try {
-                    Thread.sleep(SCAN_PERIOD);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-
-                mBluetoothAdapter.stopLeScan(mLeScanCallback);
-            }
-        }.start();
-    }
-
-    private BluetoothAdapter.LeScanCallback mLeScanCallback = new BluetoothAdapter.LeScanCallback() {
-
-        @Override
-        public void onLeScan(final BluetoothDevice device, final int rssi,
-                             final byte[] scanRecord) {
-
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    byte[] serviceUuidBytes = new byte[16];
-                    String serviceUuid = "";
-                    for (int i = 32, j = 0; i >= 17; i--, j++) {
-                        serviceUuidBytes[j] = scanRecord[i];
-                    }
-
-                    Log.i(TAG, "CALLING BACK FOR BLE SCAN");
-
-                    serviceUuid = bytesToHex(serviceUuidBytes);
-                    if (stringToUuidString(serviceUuid).equals(
-                            RBLGattAttributes.BLE_SHIELD_SERVICE
-                                    .toUpperCase(Locale.ENGLISH))) {
-                        mDevice = device;
-                    }
-                }
-            });
-        }
-    };
 
 
     private void getGattService(BluetoothGattService gattService) {
