@@ -8,14 +8,20 @@ import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
+import android.bluetooth.le.ScanSettings;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.ParcelUuid;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
@@ -27,15 +33,19 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
+
 
 public class MainActivity extends AppCompatActivity {
 
     public final static String EXTRA_MESSAGE = "com.xiang.dennis.autodoor.MESSAGE";
     private final static String TAG = MainActivity.class.getSimpleName();
 
+    private final static int MY_PERMISSIONS_REQUEST = 1;
 
     private Button unlock_button = null;
     private EditText passcode = null;
@@ -45,8 +55,10 @@ public class MainActivity extends AppCompatActivity {
     private BluetoothLeScanner BLE_Scanner;
     private BluetoothGattCharacteristic characteristicTx = null;
     private RBLService mBluetoothLeService;
+    private BluetoothDevice BLE_Device = null;
 
-    private BluetoothDevice mDevice = null;
+    private Handler mHandler;
+
     private String mDeviceAddress;
 
     private boolean flag = true;
@@ -60,28 +72,6 @@ public class MainActivity extends AppCompatActivity {
             '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
 
 
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
-        }
-
-        return super.onOptionsItemSelected(item);
-    }
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,7 +81,8 @@ public class MainActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
 
         // Initialize bluetooth adapter
-        final BluetoothManager mBluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        final BluetoothManager mBluetoothManager =
+                (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         BLE_Adapter = mBluetoothManager.getAdapter();
         BLE_Scanner = BLE_Adapter.getBluetoothLeScanner();
 
@@ -102,6 +93,11 @@ public class MainActivity extends AppCompatActivity {
             startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
         }
 
+        // Request user permission for location services
+        ActivityCompat.requestPermissions(this,
+                new String[]{android.Manifest.permission.ACCESS_COARSE_LOCATION},
+                MY_PERMISSIONS_REQUEST);
+
         passcode = (EditText) findViewById(R.id.txt_passcode);
 
         unlock_button = (Button) findViewById(R.id.btn_unlock);
@@ -110,7 +106,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View view) {
 
-                if (scanFlag == false) {
+                if (!scanFlag) {
                     scanLeDevice();
 
                     Timer mTimer = new Timer();
@@ -118,8 +114,8 @@ public class MainActivity extends AppCompatActivity {
 
                         @Override
                         public void run() {
-                            if (mDevice != null) {
-                                mDeviceAddress = mDevice.getAddress();
+                            if (BLE_Device != null) {
+                                mDeviceAddress = BLE_Device.getAddress();
                                 mBluetoothLeService.connect(mDeviceAddress);
                                 scanFlag = true;
 
@@ -149,7 +145,7 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 System.out.println(connState);
-                if (connState == false) {
+                if (!connState) {
                     mBluetoothLeService.connect(mDeviceAddress);
                 }
                 else {
@@ -168,24 +164,23 @@ public class MainActivity extends AppCompatActivity {
 
 
     private void scanLeDevice() {
-        new Thread() {
 
+        ScanFilter filter = new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(RBLGattAttributes.BLE_SHIELD_SERVICE)).build();
+        ScanSettings settings = new ScanSettings.Builder().setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES).build();
+        List<ScanFilter> filter_list = new ArrayList<>();
+        filter_list.add(filter);
+        BLE_Scanner.startScan(filter_list, settings, BLE_ScanCallback);
+
+        // Stops scanning after a pre-defined scan period.
+        mHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
-                BLE_Scanner.startScan(BLE_ScanCallback);
-
-                Log.i(TAG, "ADAPTER IS SCANNING...");
-
-                try {
-                    Thread.sleep(SCAN_PERIOD);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-
                 BLE_Scanner.stopScan(BLE_ScanCallback);
             }
-        }.start();
+        }, SCAN_PERIOD);
+
     }
+
 
     private ScanCallback BLE_ScanCallback = new ScanCallback() {
 
@@ -197,29 +192,20 @@ public class MainActivity extends AppCompatActivity {
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    byte[] serviceUuidBytes = new byte[16];
-                    String serviceUuid = "";
-                    //TODO: get the UUID
-
-                    Log.i(TAG, "CALLING BACK FOR BLE SCAN");
-
-                    serviceUuid = bytesToHex(serviceUuidBytes);
-                    if (stringToUuidString(serviceUuid).equals(
-                            RBLGattAttributes.BLE_SHIELD_SERVICE.toUpperCase(Locale.ENGLISH))) {
-                        mDevice = scan_result.getDevice();
-                    }
+                    BLE_Device = scan_result.getDevice();
                 }
             });
         }
     };
 
+
     private final ServiceConnection mServiceConnection = new ServiceConnection() {
 
         @Override
-        public void onServiceConnected(ComponentName componentName,
-                                       IBinder service) {
-            mBluetoothLeService = ((RBLService.LocalBinder) service)
-                    .getService();
+        public void onServiceConnected(ComponentName componentName, IBinder service) {
+
+            mBluetoothLeService = ((RBLService.LocalBinder) service).getService();
+
             if (!mBluetoothLeService.initialize()) {
                 Log.e(TAG, "Unable to initialize Bluetooth");
                 finish();
@@ -262,7 +248,7 @@ public class MainActivity extends AppCompatActivity {
 
         Log.i(TAG, "Resuming Activity");
 
-        if (!mBluetoothAdapter.isEnabled()) {
+        if (!BLE_Adapter.isEnabled()) {
             Intent enableBtIntent = new Intent(
                     BluetoothAdapter.ACTION_REQUEST_ENABLE);
             startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
@@ -392,6 +378,58 @@ public class MainActivity extends AppCompatActivity {
         }
 
         super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.menu_main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        int id = item.getItemId();
+
+        //noinspection SimplifiableIfStatement
+        if (id == R.id.action_settings) {
+            return true;
+        }
+
+        return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case MY_PERMISSIONS_REQUEST: {
+                // If request is cancelled, the result arrays are empty.
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    // permission was granted, yay! do nothing here, continue on with onCreate() method
+                }
+                else {
+                    // permission denied, boo! display message
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            Toast toast = Toast
+                                    .makeText(
+                                            MainActivity.this,
+                                            "This app needs location services enabled! Closing app...",
+                                            Toast.LENGTH_SHORT);
+                            toast.setGravity(0, 0, Gravity.CENTER);
+                            toast.show();
+                        }
+                    });
+                    // close app
+                    finish();
+                }
+
+                return;
+            }
+        }
     }
 
 }
