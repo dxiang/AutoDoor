@@ -119,55 +119,6 @@ public class RBLService extends Service {
         sendBroadcast(intent);
     }
 
-    public class LocalBinder extends Binder {
-        RBLService getService() {
-            return RBLService.this;
-        }
-    }
-
-    @Override
-    public IBinder onBind(Intent intent) {
-        return mBinder;
-    }
-
-    @Override
-    public boolean onUnbind(Intent intent) {
-        // After using a given device, you should make sure that
-        // BluetoothGatt.close() is called
-        // such that resources are cleaned up properly. In this particular
-        // example, close() is
-        // invoked when the UI is disconnected from the Service.
-        close();
-        return super.onUnbind(intent);
-    }
-
-    private final IBinder mBinder = new LocalBinder();
-
-    /**
-     * Initializes a reference to the local Bluetooth adapter.
-     *
-     * @return Return true if the initialization is successful.
-     */
-    public boolean initialize() {
-        // For API level 18 and above, get a reference to BluetoothAdapter
-        // through
-        // BluetoothManager.
-        if (mBluetoothManager == null) {
-            mBluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-            if (mBluetoothManager == null) {
-                Log.e(TAG, "Unable to initialize BluetoothManager.");
-                return false;
-            }
-        }
-
-        mBluetoothAdapter = mBluetoothManager.getAdapter();
-        if (mBluetoothAdapter == null) {
-            Log.e(TAG, "Unable to obtain a BluetoothAdapter.");
-            return false;
-        }
-
-        return true;
-    }
 
     /**
      * Connects to the GATT server hosted on the Bluetooth LE device.
@@ -308,5 +259,56 @@ public class RBLService extends Service {
             return null;
 
         return mBluetoothGatt.getService(UUID_BLE_SHIELD_SERVICE);
+    }
+
+
+    public class LocalBinder extends Binder {
+        RBLService getService() {
+            return RBLService.this;
+        }
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return mBinder;
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        // After using a given device, you should make sure that
+        // BluetoothGatt.close() is called
+        // such that resources are cleaned up properly. In this particular
+        // example, close() is
+        // invoked when the UI is disconnected from the Service.
+        close();
+        return super.onUnbind(intent);
+    }
+
+    private final IBinder mBinder = new LocalBinder();
+
+    /**
+     * Initializes a reference to the local Bluetooth adapter.
+     *
+     * @return Return true if the initialization is successful.
+     */
+    public boolean initialize() {
+        // For API level 18 and above, get a reference to BluetoothAdapter
+        // through
+        // BluetoothManager.
+        if (mBluetoothManager == null) {
+            mBluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+            if (mBluetoothManager == null) {
+                Log.e(TAG, "Unable to initialize BluetoothManager.");
+                return false;
+            }
+        }
+
+        mBluetoothAdapter = mBluetoothManager.getAdapter();
+        if (mBluetoothAdapter == null) {
+            Log.e(TAG, "Unable to obtain a BluetoothAdapter.");
+            return false;
+        }
+
+        return true;
     }
 }

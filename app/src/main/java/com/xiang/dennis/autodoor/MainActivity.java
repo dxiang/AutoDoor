@@ -35,14 +35,12 @@ import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
 
 
 public class MainActivity extends AppCompatActivity {
 
-    public final static String EXTRA_MESSAGE = "com.xiang.dennis.autodoor.MESSAGE";
     private final static String TAG = MainActivity.class.getSimpleName();
 
     private final static int MY_PERMISSIONS_REQUEST = 1;
@@ -57,19 +55,16 @@ public class MainActivity extends AppCompatActivity {
     private RBLService mBluetoothLeService;
     private BluetoothDevice BLE_Device = null;
 
-    private Handler mHandler;
+    private Handler mHandler = new Handler();
 
-    private String mDeviceAddress;
+    private String BLE_DeviceAddress;
 
     private boolean flag = true;
-    private boolean connState = false;
-    private boolean scanFlag = false;   // flag for if device is found, false = not found
 
     private byte[] data = new byte[3];
     private static final long SCAN_PERIOD = 2000;
     private static final int REQUEST_ENABLE_BT = 1;
-    final private static char[] hexArray = { '0', '1', '2', '3', '4', '5', '6',
-            '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
+
 
 
 
@@ -98,69 +93,57 @@ public class MainActivity extends AppCompatActivity {
                 new String[]{android.Manifest.permission.ACCESS_COARSE_LOCATION},
                 MY_PERMISSIONS_REQUEST);
 
-        passcode = (EditText) findViewById(R.id.txt_passcode);
+        // Scan for the RBL Shield
+        scanLeDevice();
 
+        // After scan period of SCAN_TIME, connect to the device
+        Timer mTimer = new Timer();
+        mTimer.schedule(new TimerTask() {
+
+            @Override
+            public void run() {
+                if (BLE_Device != null) {
+                    BLE_DeviceAddress = BLE_Device.getAddress();
+                    mBluetoothLeService.connect(BLE_DeviceAddress);
+                }
+                else {
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            Toast toast = Toast
+                                    .makeText(
+                                            MainActivity.this,
+                                            "Couldn't connect to device!",
+                                            Toast.LENGTH_SHORT);
+                            toast.setGravity(0, 0, Gravity.CENTER);
+                            toast.show();
+                        }
+                    });
+                    finish(); // Couldnt connect to device, so quit application
+                }
+            }
+        }, SCAN_PERIOD);
+
+        // Bind RBL Service to MainActivity
+        Intent gattServiceIntent = new Intent(MainActivity.this, RBLService.class);
+        bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
+
+        passcode = (EditText) findViewById(R.id.txt_passcode);
         unlock_button = (Button) findViewById(R.id.btn_unlock);
         unlock_button.setOnClickListener(new View.OnClickListener() {
 
             @Override
             public void onClick(View view) {
+                    String str = passcode.getText().toString();
+                    byte[] tmp = str.getBytes();
 
-                if (!scanFlag) {
-                    scanLeDevice();
-
-                    Timer mTimer = new Timer();
-                    mTimer.schedule(new TimerTask() {
-
-                        @Override
-                        public void run() {
-                            if (BLE_Device != null) {
-                                mDeviceAddress = BLE_Device.getAddress();
-                                mBluetoothLeService.connect(mDeviceAddress);
-                                scanFlag = true;
-
-                                String str = passcode.getText().toString();
-                                byte[] tmp = str.getBytes();
-
-                                characteristicTx.setValue(tmp);
-                                mBluetoothLeService.writeCharacteristic(characteristicTx);
-
-                                passcode.setText("");
-                            }
-                            else {
-                                runOnUiThread(new Runnable() {
-                                    public void run() {
-                                        Toast toast = Toast
-                                                .makeText(
-                                                        MainActivity.this,
-                                                        "Couldn't connect to device!",
-                                                        Toast.LENGTH_SHORT);
-                                        toast.setGravity(0, 0, Gravity.CENTER);
-                                        toast.show();
-                                    }
-                                });
-                            }
-                        }
-                    }, SCAN_PERIOD);
-                }
-
-                System.out.println(connState);
-                if (!connState) {
-                    mBluetoothLeService.connect(mDeviceAddress);
-                }
-                else {
-                    mBluetoothLeService.disconnect();
-                    mBluetoothLeService.close();
-                    setButtonDisable();
-                }
+                    characteristicTx.setValue(tmp);
+                    Log.i(TAG, "set characteristic");
+                    mBluetoothLeService.writeCharacteristic(characteristicTx);
             }
+
         });
 
-
-        Intent gattServiceIntent = new Intent(MainActivity.this, RBLService.class);
-        bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
-
-    }
+    } // End onCreate()
 
 
     private void scanLeDevice() {
@@ -193,6 +176,7 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void run() {
                     BLE_Device = scan_result.getDevice();
+                    Log.i(TAG, "Bluetooth Device found! Name: " + BLE_Device.getName() + " Address: " + BLE_Device.getAddress());
                 }
             });
         }
@@ -308,38 +292,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-    private String bytesToHex(byte[] bytes) {
-        char[] hexChars = new char[bytes.length * 2];
-        int v;
-        for (int j = 0; j < bytes.length; j++) {
-            v = bytes[j] & 0xFF;
-            hexChars[j * 2] = hexArray[v >>> 4];
-            hexChars[j * 2 + 1] = hexArray[v & 0x0F];
-        }
-        return new String(hexChars);
-    }
-
-
-    private String stringToUuidString(String uuid) {
-        StringBuffer newString = new StringBuffer();
-        newString.append(uuid.toUpperCase(Locale.ENGLISH).substring(0, 8));
-        newString.append("-");
-        newString.append(uuid.toUpperCase(Locale.ENGLISH).substring(8, 12));
-        newString.append("-");
-        newString.append(uuid.toUpperCase(Locale.ENGLISH).substring(12, 16));
-        newString.append("-");
-        newString.append(uuid.toUpperCase(Locale.ENGLISH).substring(16, 20));
-        newString.append("-");
-        newString.append(uuid.toUpperCase(Locale.ENGLISH).substring(20, 32));
-
-        return newString.toString();
-    }
-
 
     // Enables the unlock button
     private void setButtonEnable() {
         flag = true;
-        connState = true;
         unlock_button.setEnabled(flag);
     }
 
@@ -347,7 +303,6 @@ public class MainActivity extends AppCompatActivity {
     // Disables the unlock button
     private void setButtonDisable() {
         flag = false;
-        connState = false;
         unlock_button.setEnabled(flag);
     }
 
