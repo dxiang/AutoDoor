@@ -42,11 +42,10 @@ import java.util.TimerTask;
 public class MainActivity extends AppCompatActivity {
 
     private final static String TAG = MainActivity.class.getSimpleName();
-
     private final static int MY_PERMISSIONS_REQUEST = 1;
 
     private Button unlock_button = null;
-    private EditText passcode = null;
+    private EditText passcode_field = null;
 
     // Bluetooth objects
     private BluetoothAdapter BLE_Adapter;
@@ -112,13 +111,13 @@ public class MainActivity extends AppCompatActivity {
                             Toast toast = Toast
                                     .makeText(
                                             MainActivity.this,
-                                            "Couldn't connect to device!",
+                                            "Couldn't find bluetooth device!",
                                             Toast.LENGTH_SHORT);
                             toast.setGravity(0, 0, Gravity.CENTER);
                             toast.show();
                         }
                     });
-                    finish(); // Couldnt connect to device, so quit application
+                    finish(); // Couldnt find device, so quit application
                 }
             }
         }, SCAN_PERIOD);
@@ -127,13 +126,13 @@ public class MainActivity extends AppCompatActivity {
         Intent gattServiceIntent = new Intent(MainActivity.this, RBLService.class);
         bindService(gattServiceIntent, mServiceConnection, BIND_AUTO_CREATE);
 
-        passcode = (EditText) findViewById(R.id.txt_passcode);
+        passcode_field = (EditText) findViewById(R.id.txt_passcode);
         unlock_button = (Button) findViewById(R.id.btn_unlock);
         unlock_button.setOnClickListener(new View.OnClickListener() {
 
             @Override
             public void onClick(View view) {
-                    String str = passcode.getText().toString();
+                    String str = passcode_field.getText().toString();
                     byte[] tmp = str.getBytes();
 
                     characteristicTx.setValue(tmp);
@@ -142,6 +141,8 @@ public class MainActivity extends AppCompatActivity {
             }
 
         });
+
+        disableUI(); // disables UI until connected to BLE device
 
     } // End onCreate()
 
@@ -191,7 +192,7 @@ public class MainActivity extends AppCompatActivity {
             mBluetoothLeService = ((RBLService.LocalBinder) service).getService();
 
             if (!mBluetoothLeService.initialize()) {
-                Log.e(TAG, "Unable to initialize Bluetooth");
+                Log.e(TAG, "Unable to initialize Bluetooth service");
                 finish();
             }
         }
@@ -210,7 +211,7 @@ public class MainActivity extends AppCompatActivity {
             if (RBLService.ACTION_GATT_DISCONNECTED.equals(action)) {
                 Toast.makeText(getApplicationContext(), "Disconnected",
                         Toast.LENGTH_SHORT).show();
-                setButtonDisable();
+                disableUI();
             } else if (RBLService.ACTION_GATT_SERVICES_DISCOVERED
                     .equals(action)) {
                 Toast.makeText(getApplicationContext(), "Connected",
@@ -248,7 +249,7 @@ public class MainActivity extends AppCompatActivity {
         if (gattService == null)
             return;
 
-        setButtonEnable();
+        enableUI();
         startReadRssi();
 
         characteristicTx = gattService
@@ -292,18 +293,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
-
-    // Enables the unlock button
-    private void setButtonEnable() {
-        flag = true;
-        unlock_button.setEnabled(flag);
+    // disables the UI
+    private void disableUI() {
+        unlock_button.setEnabled(false);
+        passcode_field.setEnabled(false);
     }
 
 
-    // Disables the unlock button
-    private void setButtonDisable() {
-        flag = false;
-        unlock_button.setEnabled(flag);
+    // enables the UI
+    private void enableUI() {
+        unlock_button.setEnabled(true);
+        passcode_field.setEnabled(true);
     }
 
     @Override
@@ -335,12 +335,14 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
     }
 
+
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
         getMenuInflater().inflate(R.menu.menu_main, menu);
         return true;
     }
+
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
@@ -356,6 +358,7 @@ public class MainActivity extends AppCompatActivity {
 
         return super.onOptionsItemSelected(item);
     }
+
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {

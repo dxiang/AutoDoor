@@ -45,17 +45,6 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/enter_passcode_message"
-        android:id="@+id/txtview_user_input"
-        android:clickable="false"
-        android:textSize="30sp"
-        android:layout_alignParentTop="true"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="50dp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
         android:textAppearance="?android:attr/textAppearanceLarge"
         android:text="@string/locked_message"
         android:id="@+id/txtview_lock_status"
@@ -63,6 +52,17 @@
         android:layout_centerHorizontal="true"
         android:layout_marginTop="108dp"
         android:textSize="30sp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/enter_passcode_message"
+        android:id="@+id/txtview_user_input"
+        android:clickable="false"
+        android:textSize="30sp"
+        android:layout_marginTop="62dp"
+        android:layout_alignParentTop="true"
+        android:layout_centerHorizontal="true" />
 
 
 </RelativeLayout>
